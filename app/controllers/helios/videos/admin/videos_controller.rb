@@ -4,6 +4,14 @@ module Helios
       class VideosController < Helios::Videos::Admin::BaseController
         before_action :set_video
 
+        def show
+          render json: {
+            id: @video.id,
+            ready: @video.key.present? && @video.playback_urls.present?,
+            player_html: @video.key.present? ? @video.player_component : nil
+          }
+        end
+
         def update
           if @video.update(video_params)
             head :ok
@@ -15,7 +23,7 @@ module Helios
         private
 
         def set_video
-          @video = Video.find(params[:id])
+          @video = Helios::Videos.video_class.find(params[:id])
         end
 
         def video_params

@@ -4,6 +4,7 @@ module Helios
       attr_accessor :processor,
                     :require_signed_urls,
                     :admin_parent_controller,
+                    :video_model,
                     # Cloudflare
                     :cloudflare_account_id,
                     :cloudflare_api_token,
@@ -16,6 +17,7 @@ module Helios
         @processor = :cloudflare
         @require_signed_urls = true
         @admin_parent_controller = "ApplicationController"
+        @video_model = "Helios::Videos::Video"
         @cloudflare_account_id = ENV["CLOUDFLARE_ACCOUNT_ID"]
         @cloudflare_api_token = ENV["CLOUDFLARE_API_TOKEN"]
         @cloudflare_customer_subdomain = ENV["CLOUDFLARE_CUSTOMER_SUBDOMAIN"]

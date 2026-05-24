@@ -66,6 +66,64 @@ module Helios
           end
         end
 
+        def ingest_from_url!(video, source_url, provider:)
+          uri = URI("https://api.cloudflare.com/client/v4/accounts/#{account_id}/stream/copy")
+          http = Net::HTTP.new(uri.host, uri.port)
+          http.use_ssl = true
+
+          request = Net::HTTP::Post.new(uri.request_uri, {
+            "Authorization" => "Bearer #{api_token}",
+            "Content-Type" => "application/json"
+          })
+
+          request.body = {
+            url: source_url,
+            meta: { name: video.name },
+            requireSignedURLs: config.require_signed_urls
+          }.to_json
+
+          response = http.request(request)
+          body = JSON.parse(response.body)
+
+          unless response.is_a?(Net::HTTPSuccess)
+            Rails.logger.error("[helios-videos] Cloudflare migration ingest error: #{response.code} - #{response.body}")
+            raise "Cloudflare migration ingest failed: #{response.code}"
+          end
+
+          # Store the new Cloudflare key and playback URLs, but don't flip provider yet.
+          # The CheckIngestionJob will flip it once the video is ready.
+          video.update!(
+            key: body["result"]["uid"],
+            playback_urls: body["result"]["playback"],
+            requires_signed_urls: config.require_signed_urls
+          )
+
+          Rails.logger.info("[helios-videos] Migration: video #{video.id} submitted to Cloudflare: #{video.key}")
+        end
+
+        def ready?(video)
+          return false unless video.key.present?
+
+          uri = URI("https://api.cloudflare.com/client/v4/accounts/#{account_id}/stream/#{video.key}")
+          http = Net::HTTP.new(uri.host, uri.port)
+          http.use_ssl = true
+
+          request = Net::HTTP::Get.new(uri.request_uri, {
+            "Authorization" => "Bearer #{api_token}",
+            "Content-Type" => "application/json"
+          })
+
+          response = http.request(request)
+          return false unless response.is_a?(Net::HTTPSuccess)
+
+          body = JSON.parse(response.body)
+          status = body.dig("result", "status", "state")
+          status == "ready"
+        rescue => e
+          Rails.logger.warn("[helios-videos] Migration: error checking readiness for video #{video.id}: #{e.message}")
+          false
+        end
+
         def playback_url(video, signed: false, expiration: 4.hours)
           return nil unless video.key.present?
 
@@ -79,7 +137,14 @@ module Helios
         end
 
         def player_component(video, muted: false, expiration: 4.hours)
-          return "(VIDEO NOT AVAILABLE)" unless video.key.present?
+          unless video.key.present?
+            return <<~HTML.html_safe
+              <div class="text-center p-4 text-muted">
+                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                Processing video...
+              </div>
+            HTML
+          end
 
           video_src = playback_url(video, signed: video.requires_signed_urls?, expiration: expiration)
 
@@ -99,7 +164,7 @@ module Helios
           HTML
         end
 
-        def signed_token(video, expiration: 4.hours)
+        def signed_token(video, expiration: 4.hours, downloadable: false)
           key_id, private_key = fetch_signing_key
 
           now = Time.now.to_i
@@ -109,8 +174,17 @@ module Helios
             exp: now + expiration.to_i,
             nbf: now - 60
           }
+          payload[:downloadable] = true if downloadable
 
           JWT.encode(payload, private_key, "RS256", typ: "JWT", kid: key_id)
+        end
+
+        def download_url(video, expiration: 4.hours)
+          return nil unless video.key.present?
+
+          token = signed_token(video, expiration: expiration, downloadable: true)
+          subdomain = customer_subdomain(video)
+          "https://#{subdomain}.cloudflarestream.com/#{token}/downloads/default.mp4"
         end
 
         def download_thumbnail!(video, time: "3s")

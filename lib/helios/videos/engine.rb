@@ -4,11 +4,23 @@ module Helios
       isolate_namespace Helios::Videos
 
       # When helios-press is also loaded, mix video support into Block
-      initializer "helios_videos.integrate_with_press" do
+      initializer "helios_videos.integrate_with_press", after: :load_config_initializers do
         ActiveSupport.on_load(:active_record) do
           if defined?(Helios::Press::Block)
+            unless Helios::Press::Block.reflect_on_association(:video)
+              Helios::Press::Block.class_eval do
+                has_one :video, class_name: Helios::Videos.configuration.video_model, foreign_key: :block_id, dependent: :destroy
+              end
+            end
+          end
+        end
+      end
+
+      config.to_prepare do
+        if defined?(Helios::Press::Block)
+          unless Helios::Press::Block.reflect_on_association(:video)
             Helios::Press::Block.class_eval do
-              has_one :video, class_name: "Helios::Videos::Video", foreign_key: :block_id, dependent: :destroy
+              has_one :video, class_name: Helios::Videos.configuration.video_model, foreign_key: :block_id, dependent: :destroy
             end
           end
         end

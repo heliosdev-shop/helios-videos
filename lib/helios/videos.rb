@@ -16,16 +16,24 @@ module Helios
         yield(configuration)
       end
 
+      def video_class
+        configuration.video_model.constantize
+      end
+
       def processor
         @processor = nil if @processor_type != configuration.processor
         @processor_type = configuration.processor
-        @processor ||= case configuration.processor
+        @processor ||= processor_for(configuration.processor)
+      end
+
+      def processor_for(provider_type)
+        case provider_type.to_sym
         when :cloudflare
           Processors::Cloudflare.new(configuration)
         when :mux
           Processors::Mux.new(configuration)
         else
-          raise "Unknown video processor: #{configuration.processor}. Use :cloudflare or :mux"
+          raise "Unknown video processor: #{provider_type}. Use :cloudflare or :mux"
         end
       end
     end

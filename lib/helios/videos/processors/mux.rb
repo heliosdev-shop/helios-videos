@@ -14,8 +14,9 @@ module Helios
           end
 
           assets_api = MuxRuby::AssetsApi.new
+          input_settings = MuxRuby::InputSettings.new(url: video.video_file.url)
           create_request = MuxRuby::CreateAssetRequest.new(
-            input: video.video_file.url,
+            input: [input_settings],
             playback_policy: [MuxRuby::PlaybackPolicy::PUBLIC]
           )
 
@@ -28,6 +29,51 @@ module Helios
           )
 
           Rails.logger.info("[helios-videos] Video #{video.id} ingested into Mux: #{video.key}")
+        end
+
+        def ingest_from_url!(video, source_url, provider:)
+          require "mux_ruby"
+
+          MuxRuby.configure do |c|
+            c.username = config.mux_token_id
+            c.password = config.mux_token_secret
+          end
+
+          assets_api = MuxRuby::AssetsApi.new
+          input_settings = MuxRuby::InputSettings.new(url: source_url)
+          create_request = MuxRuby::CreateAssetRequest.new(
+            input: [input_settings],
+            playback_policy: [MuxRuby::PlaybackPolicy::PUBLIC],
+            mp4_support: "standard"
+          )
+
+          response = assets_api.create_asset(create_request)
+          asset = response.data
+
+          video.update!(
+            key: asset.id,
+            playback_urls: { "hls" => "https://stream.mux.com/#{asset.playback_ids&.first&.id}.m3u8" }
+          )
+
+          Rails.logger.info("[helios-videos] Migration: video #{video.id} ingested into Mux: #{video.key}")
+        end
+
+        def ready?(video)
+          return false unless video.key.present?
+
+          require "mux_ruby"
+
+          MuxRuby.configure do |c|
+            c.username = config.mux_token_id
+            c.password = config.mux_token_secret
+          end
+
+          assets_api = MuxRuby::AssetsApi.new
+          asset = assets_api.get_asset(video.key)
+          asset.data.status == "ready"
+        rescue => e
+          Rails.logger.warn("[helios-videos] Migration: error checking Mux readiness for video #{video.id}: #{e.message}")
+          false
         end
 
         def delete!(video)
@@ -53,10 +99,16 @@ module Helios
         end
 
         def player_component(video, muted: false, expiration: 4.hours)
-          return "(VIDEO NOT AVAILABLE)" unless video.key.present?
+          unless video.key.present? && extract_playback_id(video).present?
+            return <<~HTML.html_safe
+              <div class="text-center p-4 text-muted">
+                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                Processing video...
+              </div>
+            HTML
+          end
 
           playback_id = extract_playback_id(video)
-          return "(VIDEO NOT AVAILABLE)" unless playback_id.present?
 
           <<~HTML.html_safe
             <mux-player
@@ -71,6 +123,16 @@ module Helios
 
         def signed_token(video, expiration: 4.hours)
           nil # Mux uses playback IDs, not signed tokens in the same way
+        end
+
+        def download_url(video, expiration: 4.hours)
+          return nil unless video.key.present?
+
+          playback_id = extract_playback_id(video)
+          return nil unless playback_id.present?
+
+          # Mux provides static renditions at predictable URLs
+          "https://stream.mux.com/#{playback_id}/high.mp4"
         end
 
         def download_thumbnail!(video, time: "3s")
