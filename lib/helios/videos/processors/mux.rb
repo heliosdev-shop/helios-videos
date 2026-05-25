@@ -43,8 +43,7 @@ module Helios
           input_settings = MuxRuby::InputSettings.new(url: source_url)
           create_request = MuxRuby::CreateAssetRequest.new(
             input: [input_settings],
-            playback_policy: [MuxRuby::PlaybackPolicy::PUBLIC],
-            mp4_support: "standard"
+            playback_policy: [MuxRuby::PlaybackPolicy::PUBLIC]
           )
 
           response = assets_api.create_asset(create_request)
