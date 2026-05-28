@@ -11,8 +11,16 @@ export default class extends Controller {
   static targets = ["player"]
 
   connect() {
+    console.log("[helios-video-block] connect", {
+      ready: this.readyValue,
+      statusUrl: this.statusUrlValue,
+      hasPlayerTarget: this.hasPlayerTarget
+    })
     if (!this.readyValue && this.statusUrlValue) {
+      console.log("[helios-video-block] starting polling...")
       this.startPolling()
+    } else {
+      console.log("[helios-video-block] NOT polling — ready:", this.readyValue, "statusUrl:", this.statusUrlValue)
     }
   }
 
@@ -32,6 +40,7 @@ export default class extends Controller {
   }
 
   async checkStatus() {
+    console.log("[helios-video-block] polling", this.statusUrlValue)
     try {
       const response = await fetch(this.statusUrlValue, {
         headers: {
@@ -40,11 +49,14 @@ export default class extends Controller {
         }
       })
 
+      console.log("[helios-video-block] poll response status:", response.status)
       if (!response.ok) return
 
       const data = await response.json()
+      console.log("[helios-video-block] poll data:", JSON.stringify(data).substring(0, 200))
 
       if (data.ready && data.player_html) {
+        console.log("[helios-video-block] video ready! swapping player")
         this.stopPolling()
         this.readyValue = true
         if (this.hasPlayerTarget) {
@@ -52,7 +64,7 @@ export default class extends Controller {
         }
       }
     } catch (e) {
-      // Silently retry on next interval
+      console.error("[helios-video-block] poll error:", e)
     }
   }
 

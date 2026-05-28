@@ -18,7 +18,11 @@ bin/rails helios_videos:install:migrations
 bin/rails db:migrate
 ```
 
-**Prerequisites:** Your host app must have ActiveStorage installed (`bin/rails active_storage:install`).
+**Prerequisites:**
+- ActiveStorage must be installed in your host app (`bin/rails active_storage:install`)
+- Add the Ruby gem for your chosen video processor to your **host app's Gemfile**:
+  - **Mux**: `gem "mux_ruby"`
+  - **Cloudflare**: no additional gem needed (uses HTTP API directly)
 
 ## Configuration
 
@@ -195,14 +199,33 @@ Helios::Videos::Migration::ConvertVideoJob.perform_later(
 )
 ```
 
-## JavaScript
+## JavaScript Setup
 
-If your host app needs the video block Stimulus controller:
+Your host app must import the Stimulus controller and the video player library for your chosen processor.
+
+### Mux
+
+```javascript
+import '@mux/mux-player'  // Required — registers the <mux-player> custom element
+
+import { HeliosVideoBlockController } from "helios/videos"
+application.register("helios-video-block", HeliosVideoBlockController)
+```
+
+**npm dependency** (add to your host app's `package.json`):
+
+```bash
+yarn add @mux/mux-player
+```
+
+### Cloudflare
 
 ```javascript
 import { HeliosVideoBlockController } from "helios/videos"
-application.register("video-block", HeliosVideoBlockController)
+application.register("helios-video-block", HeliosVideoBlockController)
 ```
+
+No additional npm packages are needed for Cloudflare — it uses a standard `<video>` element with HLS.
 
 ### Vite
 
